@@ -1,0 +1,122 @@
+---
+title: "Housing Price"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### LOAD LIBRARIES AND DATA
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(leaps)
+library(margins)
+library(earth)
+library(ggeffects)
+library(vip)
+
+data <- read.csv("housing_5000.csv")
+
+glimpse(data)
+```
+
+### A
+
+```{r}
+# Identify best subsets
+models <- regsubsets(log(PRICEK)~., data = data)
+summary(models)
+
+# Select the best subset based on the criterion described
+res.sum <- summary(models)
+data.frame(
+  Adj.R2 = which.max(res.sum$adjr2),
+  CP = which.min(res.sum$rss),
+  BIC = which.min(res.sum$bic)
+)
+
+```
+
+That is best model: log(PRICEK) ~ DSALE + SQFTK + LN_LOTSIZE + CENTRALAIR + GARAGE + FIREPLACE + MICHLAKE + LAKE_RIVER
+
+### B
+
+```{r}
+# Descriptive statistics for the best fit model
+res.sum$rss[8]
+res.sum$adjr2[8]
+res.sum$bic[8]
+
+```
+
+### C
+
+```{r}
+# Fit the linear regression model
+m1 <- lm(log(PRICEK) ~ DSALE + SQFTK + LN_LOTSIZE + CENTRALAIR
+         + GARAGE + FIREPLACE + MICHLAKE + LAKE_RIVER, data)
+summary(m1)
+```
+
+Regression equation:
+
+$log(PRICEK) = 4.419385 - 0.160365*DSALE + 0.189483*SQFTK + 0.122369*LN_LOTSIZE + 0.083921*CENTRALAIR + 0.026255*GARAGE + 0.079700*FIREPLACE + 0.213054*MICHLAKE + 0.123061*LAKE_RIVER$
+
+### D
+
+```{r}
+# Adding quadratic effect to SQFT
+m2 <- lm(log(PRICEK) ~ DSALE + SQFTK^2 + LN_LOTSIZE + CENTRALAIR
+         + GARAGE + FIREPLACE + MICHLAKE + LAKE_RIVER, data)
+```
+
+
+```{r}
+summary(margins(m2))
+```
+
+### E
+
+```{r, warning=FALSE, message=FALSE}
+p <- ggpredict(m1)
+plot(p)
+```
+
+```{r}
+m <- margins_summary(m1)
+plot(m)
+```
+
+### F
+
+```{r}
+
+# Fit a basic MARS model
+mars <- earth(
+  log(PRICEK) ~ .,  
+  data = data)
+
+# summary of the model
+summary(mars)
+```
+
+### G
+
+```{r}
+# Plot important variables
+vip(mars)
+```
+
+The identified important variables are not identical to the identified variables previously because MARS find out non-linear relation and linear regression does not do that.
+
+
+
+
+
+
+
+
