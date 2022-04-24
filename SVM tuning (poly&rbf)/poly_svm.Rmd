@@ -1,0 +1,239 @@
+---
+title: "SVM parameter tuning"
+date: "11/30/2021"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Load libraries
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(kernlab)
+library(tidymodels)
+library(rsample)
+library(doParallel)
+library(caret)
+```
+
+## Load and slipe the data
+
+```{r}
+data <- read.csv("data.csv")
+
+data %>%
+  mutate(target = as.factor(target)) -> data
+glimpse(data)
+data <- rename(data, age = ï..age) # Rename the variabe to avoid garbage characters
+
+```
+
+The following code is to split the dataset into training and test sets
+
+```{r}
+set.seed(123) # Set seeds to make it reproducible
+split_obj <- initial_split(data = data, prop = 0.7, strata = target)
+train <- training(split_obj)
+test <- testing(split_obj)
+```
+
+## i
+
+Create the recipe
+
+```{r}
+rec_obj <-
+  recipe(target ~ ., data=train) %>%
+  step_impute_median(all_numeric(), -all_outcomes()) %>%
+  step_scale(all_numeric(), - all_outcomes()) %>%
+  step_unknown(all_nominal(), -all_outcomes()) %>%
+  step_dummy(all_nominal(), -all_outcomes()) %>%
+  prep()
+
+# Bake
+
+train <- bake(rec_obj, new_data=train)
+test <- bake(rec_obj, new_data=test)
+```
+
+
+### Define the tuning specification
+
+```{r}
+tuning_specs <- svm_poly(
+  cost = tune(), degree = 1
+) %>%
+  set_mode("classification") %>%
+  set_engine("kernlab"); tuning_specs
+
+cost <- expand.grid(cost = c(0.25, 0.5, 0.75, 1, 1.25, 1.5))
+cost
+```
+
+Resampling with v = 3.
+
+```{r}
+cv_folds <- vfold_cv(data = train, v = 3); cv_folds
+svm_wf1 <- workflow() %>%
+  add_model(tuning_specs) %>% # specifications
+  add_formula(target ~ .) # formula
+```
+
+
+### Tuning is faster in parallel
+
+Setting up cores
+
+```{r}
+cores1 <- parallel::detectCores(logical = FALSE)
+cl <- makeCluster(cores1)
+registerDoParallel(cl)
+```
+
+### Start Tuning
+
+```{r}
+svm_res1 <-  svm_wf1 %>% 
+  tune_grid(resamples = cv_folds,
+            grid = cost)
+```
+
+### Collect the results and optimized model
+
+```{r}
+svm_res1 %>% 
+  collect_metrics() %>%
+  arrange(desc(mean))
+
+final1 <- 
+  svm_res1 %>%
+  select_best(metric = "accuracy") # best model based on accuracy
+final1
+```
+
+### Save the final model to an object 
+
+```{r}
+model1 <- svm_wf1 %>%
+  finalize_workflow(final1) %>%
+  fit(data=train) # fit on train data
+```
+
+### Prediction and evaluation on training data using model 1
+
+```{r}
+p1 <- predict(model1, train, type="prob")
+head(p1)
+p1 <- p1$.pred_1
+pred1 <- p1 >= 0.5
+pr1 <- as.numeric(pred1)
+confusionMatrix(as.factor(pr1), train$target)
+
+```
+
+### prediction and evaluation on testing data using mdoel1.
+
+```{r}
+p2 <- predict(model1, test, type="prob")
+head(p2)
+p2 <- p2$.pred_1
+pred2 <- p2 >= 0.5
+pr2 <- as.numeric(pred2)
+confusionMatrix(as.factor(pr2), test$target)
+```
+
+
+
+
+## iii
+
+Define the tuning specification
+
+```{r}
+tuning_specs <- svm_rbf(cost = tune(), rbf_sigma = tune()) %>%
+  set_mode("classification") %>%
+  set_engine("kernlab"); tuning_specs
+```
+
+Define a grid to vary sigma
+
+```{r}
+sigma <- expand.grid(rbf_sigma = c(0.1, 1, 2, 3), cost = c(0.25, 0.5, 0.75, 1))
+```
+
+Resampling and setting up the workflow
+
+```{r}
+cv_folds <- vfold_cv(data = train, v = 3); cv_folds
+# Workflow for tuning
+svm_wf3 <- workflow() %>%
+  add_model(tuning_specs) %>% # specs
+  add_formula(target ~ .) # formula
+```
+
+### Start Tuning
+
+```{r}
+svm_res3 <-  svm_wf3 %>% 
+  tune_grid(resamples = cv_folds,
+            grid = sigma)
+```
+
+
+### Collect the results and optimized model
+
+```{r}
+svm_res3 %>% 
+  collect_metrics() %>%
+  arrange(desc(mean))
+
+final3 <- 
+  svm_res3 %>%
+  select_best(metric = "accuracy") # best model based on accuracy
+final3
+```
+
+### Save the final model to an object 
+
+```{r}
+model3 <- svm_wf3 %>%
+  finalize_workflow(final3) %>%
+  fit(data=train) # fit on train data
+```
+
+### Prediction and evaluation on training data using model 3
+
+```{r}
+p5 <- predict(model3, train, type="prob")
+head(p5)
+p5 <- p5$.pred_1
+pred5 <- p5 >= 0.5
+pr5 <- as.numeric(pred5)
+confusionMatrix(as.factor(pr5), train$target)
+
+```
+
+### Prediction and evaluation on training data using model 2
+
+```{r}
+p6 <- predict(model3, test, type="prob")
+head(p6)
+p6 <- p6$.pred_1
+pred6 <- p6 >= 0.5
+pr6 <- as.numeric(pred6)
+confusionMatrix(as.factor(pr6), test$target)
+```
+
+
+
+
+
+
+
+
+
