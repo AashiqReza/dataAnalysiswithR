@@ -1,0 +1,110 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load libraries and read the data
+
+```{r}
+library(tidyverse)
+library(caret)
+library(CGPfunctions)
+library(nnet)
+
+d <- read.csv("ObesityDataSet_raw_and_data_sinthetic.csv")
+```
+
+Overview of the data
+
+```{r}
+glimpse(d)
+```
+
+# Visualization
+
+Impact of gender in obesity.
+
+```{r}
+ggplot(d, aes(x = NObeyesdad, y = Gender, fill = Gender)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+```
+
+
+Impact of family history of overweight in obesity.
+
+
+```{r}
+ggplot(d, aes(x = NObeyesdad, y = `family_history_with_overweight`, fill = `family_history_with_overweight`)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+```
+
+Impact of smoking status in obesity.
+
+
+```{r}
+ggplot(d, aes(x = NObeyesdad, y = SMOKE, fill = SMOKE)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+```
+
+
+# Splitting data into train and test sets:
+
+```{r}
+set.seed(123)
+smp_size <- floor(0.70 * nrow(d))
+
+train_ind <- sample(seq_len(nrow(d)), size = smp_size)
+
+train <- d[train_ind, ]
+test <- d[-train_ind, ]
+```
+
+
+# Train a logistic regression model
+
+```{r}
+m1 <- multinom(NObeyesdad ~., train)
+summary(m1)
+```
+
+## Make predictions and find accuracy
+
+```{r}
+pred <- predict(m1, type = "class", newdata = test)
+head(pred)
+
+cm <- table(pred, test$NObeyesdad)
+confusionMatrix(cm)
+
+```
+
+So our model predicts obesity class with 95% accurately.
+
+
+## Take a look on the important variables
+
+Important variables to determine obesity types.
+
+```{r}
+varImp(m1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
