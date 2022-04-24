@@ -1,0 +1,144 @@
+---
+title: "Covid Data Analysis"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load the data
+
+```{r}
+library(tidyverse)
+library(caret)
+library(ROCR)
+library(rpart)
+library(rpart.plot)
+
+
+data <- read.csv("cov.csv")
+glimpse(data) # take a look on the data
+```
+
+# Initial Questions
+
+Number of people tested positive and negative for covid-19 in this dataset:
+
+```{r}
+data %>%
+  group_by(corona_result) %>%
+  summarise(Freq = n())
+```
+
+Number of tested positive = 4553 and negative = 146810.
+
+To remove "other" from corona_result and change positive and negative into 0 and 1 respectively:
+
+```{r}
+# Remove other from the result column
+data1 <- subset(data, corona_result != "other")
+
+# make positive = 1 and negative = 0
+
+data1 <- mutate(data1, res = recode(corona_result,
+                                    "negative" = 0,
+                                    "positive" = 1))
+
+# Remove observations of missing values with observations for age_60_and_above and gender
+
+summary(is.na(data1[,8:9]))
+
+```
+
+There are no NA's in these two columns. So missing values can occur with blank spaces. So we shall need to remove those blank spaces to make the data prepared
+
+```{r}
+
+data1 <- subset(data1, age_60_and_above != "" | gender != "")
+
+```
+
+
+To split the dataset into 90:10 ratio, we can execute the following code:
+
+```{r}
+set.seed(111)
+library(caTools)
+sample <- floor(0.70 * nrow(data1))
+train_indx <- sample(seq_len(nrow(data1)), size = sample)
+train <- data1[train_indx, ]
+test <- data1[-train_indx, ]
+```
+
+# Logistic Regression
+
+Fit a logistic model treating the res as dependent variable and the symptoms as independent variable:
+
+```{r}
+m1 <- glm(as.factor(res) ~ cough + fever + sore_throat + shortness_of_breath + head_ache + age_60_and_above + gender, family = "binomial", train)
+```
+
+Construct a confusion matrix with the threshold value 0.5 in test set.
+
+```{r}
+pred_test <- predict(m1, newdata = test, type = "response")
+cm <- table(test$res, as.numeric(pred_test >= 0.5))
+cm
+confusionMatrix(cm)
+```
+
+
+ROC curve of the logistic regression on test set:
+
+```{r}
+pred <- prediction(pred_test, test$res)
+perf <- performance(pred, "acc")
+plot(perf)
+auc = performance(pred, measure = "auc")
+print(auc@y.values)
+```
+
+
+The coefficients are:
+
+```{r}
+
+coef(m1)
+
+```
+
+
+```{r}
+exp(cbind(Odds_Ratio = coef(m1), confint(m1)))
+```
+
+
+# Decision Tree
+
+Train and generate decision tree using rpart and rpart.plot:
+
+```{r}
+m2 <- rpart(res ~ cough + fever + sore_throat + shortness_of_breath + head_ache + age_60_and_above + gender, train, method = "class",
+               control = rpart.control(cp = 0.001))
+rpart.plot(m2, fallen.leaves = F)
+```
+
+
+```{r}
+m2$variable.importance
+```
+
+
+We execute the code to find the answers:
+
+```{r}
+
+pred_test <- (predict(m2, newdata = test, type = "class"))
+cm <- table(pred_test, test$res)
+confusionMatrix(cm)
+```
+
+
