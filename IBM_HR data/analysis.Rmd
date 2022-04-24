@@ -1,0 +1,210 @@
+---
+title: "Model Comparison"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load The Data 
+```{r}
+library(tidyverse)
+data <- read.csv("HR-Employee-IBM.csv")
+glimpse(data)
+```
+
+### Split the data into test and train set
+
+```{r}
+## 70% of the sample size
+smp_size <- floor(0.70 * nrow(data))
+
+## set the seed to make your partition reproducible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(data)), size = smp_size)
+
+train <- data[train_ind, ]
+test <- data[-train_ind, ]
+```
+
+
+### logistic regression - binomial
+
+Variable selection with information gain method.
+
+```{r}
+library(FSelectorRcpp)
+imp <- information_gain(Attrition~., data)
+filter(imp, importance > 0)
+```
+
+We will use all variable having non-zero importance as predictor from the training set
+
+```{r}
+
+m1 <- glm(as.factor(Attrition) ~ `ï..Age` + BusinessTravel + Department + EducationField + Gender + JobLevel + JobRole + MaritalStatus + MonthlyIncome + OverTime + StockOptionLevel + TotalWorkingYears + YearsAtCompany + YearsWithCurrManager, train, family = "binomial")
+```
+
+#### Model Diagonostics:
+
+```{r}
+# Prediction on test set
+pred_m1 <- predict(m1, newdata = test, type = "response")
+pred_m1n <- pred_m1 >= 0.35
+pred_m1n <- factor(pred_m1n, labels = c("No", "Yes"))
+cm1 <- table(pred_m1n, test$Attrition)
+cm1
+library(caret) # To produce diagonostics for the confusion matrix
+confusionMatrix(cm1)
+
+# ROC curve
+library(pROC)
+troc=roc(response=train$Attrition ,predictor = m1$fitted.values,plot=T)
+troc$auc
+```
+
+### Logistic regression: poisson family:
+
+```{r}
+m2 <- glm(as.numeric(as.factor(Attrition)) ~ `ï..Age` + BusinessTravel + Department + EducationField + Gender + JobLevel + JobRole + MaritalStatus + MonthlyIncome + OverTime + StockOptionLevel + TotalWorkingYears + YearsAtCompany + YearsWithCurrManager, train, family = "poisson")
+```
+
+```{r}
+pred_m2 <- predict(m2, newdata = test, type = "response")
+pred_m2n <- floor(pred_m2)
+pred_m2n <- factor(pred_m2n, labels = c("No", "Yes"))
+cm2 <- table(pred_m2n, test$Attrition)
+cm2
+confusionMatrix(cm2)
+
+# ROC
+troc=roc(response=train$Attrition ,predictor = m2$fitted.values,plot=T)
+troc$auc
+
+
+```
+
+
+### Generalized Additive Model:
+
+```{r}
+library(mgcv)
+m3 <- gam(as.factor(Attrition) ~ `ï..Age` + BusinessTravel + Department + EducationField + Gender + JobLevel + JobRole + MaritalStatus + MonthlyIncome + OverTime + StockOptionLevel + TotalWorkingYears + YearsAtCompany + YearsWithCurrManager, train, method = "REML", family = "binomial")
+```
+
+Making prediction
+
+```{r}
+pred_m3 <- predict(m3, newdata = test, type = "response")
+pred_m3n <- pred_m3 >= 0.3
+pred_m3n <- factor(pred_m3n, labels = c("No", "Yes"))
+cm3 <- table(pred_m3n, test$Attrition)
+cm3
+confusionMatrix(cm3)
+
+troc=roc(response=train$Attrition ,predictor = m3$fitted.values,plot=T)
+troc$auc
+```
+
+### SVM
+
+```{r}
+library(e1071)
+m4 <- svm(as.factor(Attrition) ~ `ï..Age` + BusinessTravel + Department + EducationField + Gender + JobLevel + JobRole + MaritalStatus + MonthlyIncome + OverTime + StockOptionLevel + TotalWorkingYears + YearsAtCompany + YearsWithCurrManager,
+                 data = train,
+                 type = 'C-classification',
+          kernel = "sigmoid", coef0 = 0.15)
+```
+
+Make prediction
+
+```{r}
+pred_m4 <- predict(m4, test)
+cm4 <- table(pred_m4, as.factor(test$Attrition))
+cm4
+confusionMatrix(cm4)
+```
+
+### Neural Network:
+
+```{r}
+mm <- select(train, -c("BusinessTravel", "Department", "EducationField", "Gender", "JobRole", "MaritalStatus", "Over18", "OverTime"))
+
+t <- select(test, -c("BusinessTravel", "Department", "EducationField", "Gender", "JobRole", "MaritalStatus", "Over18", "OverTime"))
+mm$Attrition <- as.numeric(as.factor(mm$Attrition))
+sc <- as.data.frame(scale(mm))
+
+set.seed(123456789)
+
+library(neuralnet)
+mmat <- model.matrix(~ Attrition + `ï..Age` + DailyRate + DistanceFromHome + Education + EmployeeCount + EmployeeNumber + EnvironmentSatisfaction + HourlyRate + JobInvolvement + JobLevel + JobSatisfaction + NumCompaniesWorked + PercentSalaryHike + PerformanceRating + RelationshipSatisfaction + StandardHours + StockOptionLevel + TotalWorkingYears + TrainingTimesLastYear + WorkLifeBalance + YearsAtCompany + YearsInCurrentRole + YearsSinceLastPromotion + YearsWithCurrManager,
+                data = sc)
+
+m5 <- neuralnet(Attrition ~ `ï..Age` + DailyRate + DistanceFromHome + Education + EmployeeCount + EmployeeNumber + EnvironmentSatisfaction + HourlyRate + JobInvolvement + JobLevel + JobSatisfaction + NumCompaniesWorked + PercentSalaryHike + PerformanceRating + RelationshipSatisfaction + StandardHours + StockOptionLevel + TotalWorkingYears + TrainingTimesLastYear + WorkLifeBalance + YearsAtCompany + YearsInCurrentRole + YearsSinceLastPromotion + YearsWithCurrManager,
+                data = mmat, 
+                linear.output = FALSE,
+                act.fct = "logistic",
+                hidden = 10)
+
+pr <- predict(m5, t)
+p <- pr >= 0.5
+p <- factor(p, labels = c("No", "Yes"))
+cm5 <- table(p, test$Attrition)
+cm5
+confusionMatrix(cm5)
+###
+
+```
+
+
+# Comments:
+
+This study was conducted to show how to classify customer attrition in Rstudio using different classification models. The accuracy of the models are not very good here because very naive approaches have been taken. Optimizing the parameter values, introducing control parameters, etc. approacehs can be taken to improve prediction performances.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
