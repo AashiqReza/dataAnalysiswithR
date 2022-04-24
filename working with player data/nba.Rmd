@@ -1,0 +1,218 @@
+---
+title: "Prediction of Player's Position with NBA Player Data"
+output: word_document
+toc: TRUE
+---
+
+```{r setup, include=FALSE, echo=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = FALSE,dpi=300,fig.width=7)
+```
+
+# Introduction
+
+Data analysis has been a very important part in sports now a days. To analyze players' physic and also the tactics of the game as well as in many other sectors, data analysis now-a-days plays a very big role. Wen Wang (2014) mentioned that NBA was also the beneficiary of Age of Big Data and made plenty of money[1]. Yuanyuan Gai shows the importance of player efficiency rate in the analysis section to find differences between players[2]. So often coaches struggle to set the right position of their players. Keeping this things in mind, a analysis can be drawn to find players' position using different performance ratings. In this study, different statistics have been used to predict players' position that might even help to find the perfect position for a player. 
+
+# Type of Implementation and Simulation Language:
+
+Some simulations were made to visualize the time series. Al the simulations and analysis were done on R statistical software.
+
+# Data Description
+
+The data was collected from kaggle[2]. The data has 26 variables including players' name, Age, position, team and other sporting stats.
+
+```{r}
+library(tidyverse)
+data <- read.csv("nba2021_advanced.csv")
+glimpse(data)
+```
+
+The target variable Position is a character type and contains 9 unique values, i.e., there are 9 different positions.
+
+```{r}
+summary(data$Pos)
+unique(data$Pos)
+```
+
+The following figure gives the distribution of some important numeric variables. Most of the distribution looks Gaussian type and skewed. The variable representing offensive rebound rate has an exponential distribution.
+
+```{r}
+library(egg)
+fig1 <- ggarrange(ggplot(data, aes(x = PER)) + geom_histogram()+ theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `TS.`)) + geom_histogram() + theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `X3PAr`)) + geom_histogram()+
+    geom_histogram()+ theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `ORB.`)) + geom_histogram()+
+    geom_histogram()+ theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `DRB.`)) + geom_histogram()+
+    geom_histogram()+ theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `AST.`)) + geom_histogram()+
+    geom_histogram()+ theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `STL.`)) + geom_histogram()+
+    geom_histogram()+ theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `BLK.`)) + geom_histogram()+
+    geom_histogram()+ theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `TOV.`)) + geom_histogram()+
+    geom_histogram()+ theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `OWS`)) + geom_histogram()+
+    geom_histogram()+ theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `DWS`)) + geom_histogram()+
+    geom_histogram()+ theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `WS`)) + geom_histogram()+ geom_histogram()+
+    theme(text = element_text(size=8)),
+  ggplot(data, aes(x = `VORP`)) + geom_histogram() +
+    geom_histogram()+ theme(text = element_text(size=8))
+)
+ggsave("plot1.tiff", fig1, width=10, height=10, units="cm", dpi=300)
+fig1
+```
+
+The dataset contains some useful information on players and how many minutes they have played. The following figure was produced to show the top 10 players playing the most number of minutes in the pitch. James Harden has taken the top position in this segment.
+
+```{r}
+min <- data %>%
+  group_by(Player) %>%
+  summarise(Total_min = sum(MP)) %>%
+  arrange(desc(Total_min)) %>%
+  top_n(10)
+
+fig2 <- ggplot(min, aes(Total_min, reorder(Player, Total_min), fill = Total_min)) +
+  geom_bar(colour = 'cyan', stat = 'identity') +
+  ggtitle('Players with most minutes playes') +
+  scale_colour_brewer() 
+ggsave("plot2.tiff", fig2, width=10, height=10, units="cm", dpi=300)
+fig2
+```
+
+The PER is one of the most important stat to analyze players' performances. This stands for the player efficiency rating which is a key measure to evaluate a player's performance. We took the average value of PER for each player and found that Devontae Crook has been the most valuable player in this scale.
+
+```{r}
+ef <- data %>%
+  group_by(Player) %>%
+  summarise(EF = mean(PER)) %>%
+  arrange(desc(EF)) %>%
+  top_n(10)
+
+fig3 <- ggplot(ef, aes(EF, reorder(Player, EF), fill = EF)) +
+  geom_bar(colour = 'cyan', stat = 'identity') +
+  ggtitle('Top 10 players with best efficiency rating') +
+  scale_colour_brewer() 
+
+ggsave("plot3.tiff", fig3, width=10, height=10, units="cm", dpi=300)
+fig3
+```
+
+The efficiency can be evaluated with their position also. We can see the difference of efficiency based on position clearly from the figure. It shows that players from certain position have higher rating.
+
+```{r}
+ef <- data %>%
+  group_by(Pos) %>%
+  summarise(EF = mean(PER)) %>%
+  arrange(desc(EF))
+
+fig4 <- ggplot(ef, aes(EF, reorder(Pos, EF), fill = EF)) +
+  geom_bar(colour = 'cyan', stat = 'identity') +
+  ggtitle('Efficiency rating based on position') +
+  scale_colour_brewer() 
+ggsave("plot4.tiff", fig4, width=10, height=10, units="cm", dpi=300)
+fig4
+```
+
+True shooting percentage means the percentage of shooting by a player. We assume that players from different positions have different true shooting percentages. The following figure shows that players in the C position have the most true shooting percentage.
+
+```{r}
+fig5 <- ggplot(data, aes(x = Pos, y = `TS.`, fill = Pos)) +
+  geom_boxplot()
+ggsave("plot5.tiff", fig5, width=10, height=10, units="cm", dpi=300)
+fig5
+```
+
+Total rebound is also a very significant measure for the position. Different players from different positions shows clear differences in their total rebound.
+
+```{r}
+fig6 <- ggplot(data, aes(x = Pos, y = `TRB.`, fill = Pos)) +
+  geom_boxplot() +
+  scale_fill_brewer()
+ggsave("plot6.tiff", fig6, width=10, height=10, units="cm", dpi=300)
+fig6
+```
+
+We can also tell that players with different positions have significicant differences in their total number of assists as well. The following figures confirms that assumption.
+
+```{r}
+fig7 <- ggplot(data, aes(x = Pos, y = `AST.`, fill = Pos)) +
+  geom_boxplot() + 
+  scale_fill_brewer()
+ggsave("plot7.tiff", fig7, width=10, height=10, units="cm", dpi=300)
+fig7
+```
+
+Win share does not show much significant differences based on the positions of the players.
+
+```{r}
+fig8 <- ggplot(data, aes(x = Pos, y = WS, fill = Pos)) +
+  geom_boxplot() +
+  scale_fill_brewer()
+ggsave("plot8.tiff", fig8, width=10, height=10, units="cm", dpi=300)
+fig8
+```
+
+# Model Selection
+
+A decision tree is a classifier expressed as a recursive partition of the input space based on the values of the attributes. In decision trees, multiple algorithms are being used to split a node into more than one sub-nodes. Decision tree takes the most important variable as its root node and splits it into different sub-nodes based on the decision to be made. It keeps on splitting the leaf nodes for all the independent variables based on the decision[4].
+
+In rstudio, the train() function from the "caret" package can fit a decision tree model setting method equal to "rpart".
+
+# Final Interpretation and Conclusion
+
+The tree plot shows the decision tree constructed from the given NBA dataset for our analysis. It is a simple visualization how the classification is done with the model. The confusion matrix shows an accuracy of 51% which is not so bad. And the AUC value is 0.80 which is very good for the model.
+
+```{r}
+mod <- select(data, -c("Player", "Age", "Tm", "G", "MP"))
+
+## 70% of the sample size
+smp_size <- floor(0.70 * nrow(mod))
+
+## set the seed to make your partition reproducible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(mod)), size = smp_size)
+
+train <- mod[train_ind, ]
+test <- mod[-train_ind, ]
+
+train$Pos <- as.factor(train$Pos)
+test$Pos <- as.factor(test$Pos)
+
+library(caret)
+m1 <- train(Pos ~ ., 
+                  train, 
+                  method="rpart", 
+                  trControl = trainControl(method = "cv", number=20))
+library(rattle)
+fancyRpartPlot(m1$finalModel)
+
+pred <- predict(m1, newdata = test, method = "type")
+u <- union(pred, test$Pos)
+t <- table(factor(pred, u), factor(test$Pos, u))
+confusionMatrix(t)
+
+library(pROC)
+auc   <- multiclass.roc(response = test$Pos,
+                      predictor = as.numeric(pred))
+print(auc)
+
+predicted <- pred
+res <- cbind(test, predicted)
+write.csv(res, "output.csv")
+```
+
+Our obtained accuracy is low in the calculation from the confusion matrix but a high AUC value suggest that the model performance is very good. So, we can say that, the players classified with wrong position are actually in the wrong position and should be replaced in the decision made from the analysis to improve the efficiency of those players.
+
+# REFERENCES
+
+[1] Xie, Z. and Gao, J. (2016) “Data analysis instance for NBA star shooting,” Open journal of social sciences, 04(09), pp. 1–8.
+
+[2] Gai, Y.Y. (2014), NBA Go into The era of Big Data. Qingdao Full Search Electronics.
+
+[3] Alpaydin, U. (no date) “Nba 2020-2021 season player stats.”
+
+[4] Fattah, A. et al. (2012) “A decision tree classification model for university admission system,” International journal of advanced computer science and applications: IJACSA, 3(10). doi: 10.14569/ijacsa.2012.031003.
