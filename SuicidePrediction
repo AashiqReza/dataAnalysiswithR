@@ -1,0 +1,78 @@
+library(keras)
+library(dplyr)
+library(ggplot2)
+library(purrr)
+library(caret)
+
+
+df <- read.csv("Suicide_Detection.csv")
+
+
+
+num_words <- 10000
+max_length <- 120
+text_vectorization <- layer_text_vectorization(
+  max_tokens = num_words, 
+  output_sequence_length = max_length, 
+)
+
+text_vectorization %>% 
+  adapt(df$text)
+training_id <- sample.int(nrow(df), size = nrow(df)*0.7)
+training <- df[training_id,]
+testing <- df[-training_id,]
+
+input <- layer_input(shape = c(1), dtype = "string")
+
+set.seed(123)
+
+output <- input %>% 
+  text_vectorization() %>% 
+  layer_embedding(input_dim = num_words + 1, output_dim = 16) %>%
+  layer_conv_1d(filters = 10, kernel_size = 3, padding = "valid",
+                activation = "relu", strides = 1) %>%
+  layer_dropout(0.1) %>% 
+  layer_global_max_pooling_1d() %>%  layer_dense(units = 16, activation = "relu") %>%
+  layer_dropout(0.5) %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+
+model <- keras_model(input, output)
+
+set.seed(123)
+model %>% compile(
+  optimizer = optimizer_adam(lr = 0.001),
+  loss = 'binary_crossentropy',
+  metrics = list('accuracy')
+)
+set.seed(123)
+history <- model %>% fit(
+  training$text,
+  as.numeric(training$class == "suicide"),
+  epochs = 25,
+  batch_size = 512,
+  validation_split = 0.3,
+  verbose=2
+)
+
+metrics <- keras_predict(
+  model,
+  as.matrix(training$text),
+  as.numeric(training$class == "suicide")
+)
+
+results <- model %>% evaluate(testing$text, as.numeric(testing$class == "suicide"), verbose = 2)
+results
+
+pred <- model %>% predict(testing$text)
+length(pred)
+p <- pred >= 0.5
+p <- as.numeric(p)
+head(p)
+p <- ifelse(p == 0, "non-suicide", "suicide")
+cm <- table(p, testing$class)
+cm
+0.9097985
+confusionMatrix(cm)
+tiff("CNNPOOL.tiff", units="in", width=5, height=5, res=700)
+plot(history)
+dev.off()
