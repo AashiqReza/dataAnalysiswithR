@@ -1,0 +1,196 @@
+#%% NAIVE BAYES INSTEAD OF SVM
+
+import pandas as pd
+import time
+from sklearn.linear_model import LogisticRegression
+from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score, roc_curve, f1_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+start_time = time.time()
+
+# Read the data
+train_data = pd.read_csv('train.csv')
+test_data = pd.read_csv('test.csv')
+
+# Concatenate train and test data for feature engineering if needed
+
+# Create X_train and Y_train
+X_train = train_data.drop(['label'], axis=1)
+Y_train = train_data['label']
+
+# Create X_test and Y_test
+X_test = test_data.drop(['label'], axis=1)
+Y_test = test_data['label']
+
+# Replace class labels with numeric values
+Y_train = Y_train.replace({'No Tumor': 0, 'Glioma tumor': 1, 'Pituitary tumor': 1, 'Meninglioma tumor': 1})
+Y_test = Y_test.replace({'No Tumor': 0, 'Glioma tumor': 1, 'Pituitary tumor': 1, 'Meninglioma tumor': 1})
+
+# Define class weights
+class_weights = {0: 0.85, 1: 2.15}
+
+# Initialize models
+logreg_model = LogisticRegression(random_state=42, class_weight=class_weights)
+xgb_model = XGBClassifier(random_state=42)
+randomforest_model = RandomForestClassifier(random_state=42, class_weight=class_weights)
+naive_bayes_model = GaussianNB()
+
+# Define parameter grids for GridSearchCV
+logreg_param_grid = {
+    'C': [0.01, 0.1, 1, 10],
+    'penalty': ['l2'],
+    'solver': ['newton-cg', 'lbfgs', 'liblinear']
+}
+
+xgb_param_grid = {
+    'n_estimators': [50, 100, 200],
+    'max_depth': [1, 3, 5]
+}
+
+randomforest_param_grid = {
+    'n_estimators': [100, 500, 1000],
+    'max_depth': [3, 5, 7],
+    'min_samples_split': [2, 5, 10]
+}
+
+# Perform GridSearchCV for each model
+logreg_grid_search = GridSearchCV(logreg_model, param_grid=logreg_param_grid, cv=5)
+logreg_grid_search.fit(X_train, Y_train)
+best_logreg_model = logreg_grid_search.best_estimator_
+
+xgb_grid_search = GridSearchCV(xgb_model, param_grid=xgb_param_grid, cv=5)
+xgb_grid_search.fit(X_train, Y_train)
+best_xgb_model = xgb_grid_search.best_estimator_
+
+randomforest_grid_search = GridSearchCV(randomforest_model, param_grid=randomforest_param_grid, cv=5)
+randomforest_grid_search.fit(X_train, Y_train)
+best_randomforest_model = randomforest_grid_search.best_estimator_
+
+# Naive Bayes does not require parameter tuning via GridSearchCV
+best_naive_bayes_model = naive_bayes_model.fit(X_train, Y_train)
+
+# Function to find the optimal threshold based on F1 score
+def find_optimal_threshold(fpr, tpr, thresholds, y_true, y_prob):
+    f1_scores = []
+    for threshold in thresholds:
+        y_pred = (y_prob >= threshold).astype(int)
+        f1 = f1_score(y_true, y_pred)
+        f1_scores.append(f1)
+    optimal_threshold = thresholds[np.argmax(f1_scores)]
+    return optimal_threshold
+
+# Optimize threshold using F1 score
+fpr_rf, tpr_rf, thresholds_rf = roc_curve(Y_test, best_randomforest_model.predict_proba(X_test)[:, 1])
+optimal_threshold_rf = find_optimal_threshold(fpr_rf, tpr_rf, thresholds_rf, Y_test, best_randomforest_model.predict_proba(X_test)[:, 1])
+randomforest_predictions = (best_randomforest_model.predict_proba(X_test)[:, 1] >= optimal_threshold_rf).astype(int)
+
+fpr_nb, tpr_nb, thresholds_nb = roc_curve(Y_test, best_naive_bayes_model.predict_proba(X_test)[:, 1])
+optimal_threshold_nb = find_optimal_threshold(fpr_nb, tpr_nb, thresholds_nb, Y_test, best_naive_bayes_model.predict_proba(X_test)[:, 1])
+naive_bayes_predictions = (best_naive_bayes_model.predict_proba(X_test)[:, 1] >= optimal_threshold_nb).astype(int)
+
+fpr_xgb, tpr_xgb, thresholds_xgb = roc_curve(Y_test, best_xgb_model.predict_proba(X_test)[:, 1])
+optimal_threshold_xgb = find_optimal_threshold(fpr_xgb, tpr_xgb, thresholds_xgb, Y_test, best_xgb_model.predict_proba(X_test)[:, 1])
+xgb_predictions = (best_xgb_model.predict_proba(X_test)[:, 1] >= optimal_threshold_xgb).astype(int)
+
+fpr_logreg, tpr_logreg, thresholds_logreg = roc_curve(Y_test, best_logreg_model.predict_proba(X_test)[:, 1])
+optimal_threshold_logreg = find_optimal_threshold(fpr_logreg, tpr_logreg, thresholds_logreg, Y_test, best_logreg_model.predict_proba(X_test)[:, 1])
+logreg_predictions = (best_logreg_model.predict_proba(X_test)[:, 1] >= optimal_threshold_logreg).astype(int)
+
+# Calculate accuracy, confusion matrix, sensitivity, specificity, and AUC
+def calculate_metrics(y_true, y_pred):
+    accuracy = accuracy_score(y_true, y_pred)
+    conf_matrix = confusion_matrix(y_true, y_pred)
+    return accuracy, conf_matrix
+
+logreg_accuracy, logreg_conf_matrix = calculate_metrics(Y_test, logreg_predictions)
+xgb_accuracy, xgb_conf_matrix = calculate_metrics(Y_test, xgb_predictions)
+randomforest_accuracy, randomforest_conf_matrix = calculate_metrics(Y_test, randomforest_predictions)
+naive_bayes_accuracy, naive_bayes_conf_matrix = calculate_metrics(Y_test, naive_bayes_predictions)
+
+# Calculate sensitivity and specificity
+def calculate_sensitivity_specificity(conf_matrix):
+    true_negatives, false_positives, false_negatives, true_positives = conf_matrix.ravel()
+    sensitivity = true_positives / (true_positives + false_negatives)
+    specificity = true_negatives / (true_negatives + false_positives)
+    return sensitivity, specificity
+
+logreg_sensitivity, logreg_specificity = calculate_sensitivity_specificity(logreg_conf_matrix)
+xgb_sensitivity, xgb_specificity = calculate_sensitivity_specificity(xgb_conf_matrix)
+randomforest_sensitivity, randomforest_specificity = calculate_sensitivity_specificity(randomforest_conf_matrix)
+naive_bayes_sensitivity, naive_bayes_specificity = calculate_sensitivity_specificity(naive_bayes_conf_matrix)
+
+# Calculate AUC values
+logreg_auc = roc_auc_score(Y_test, best_logreg_model.predict_proba(X_test)[:, 1])
+xgb_auc = roc_auc_score(Y_test, best_xgb_model.predict_proba(X_test)[:, 1])
+randomforest_auc = roc_auc_score(Y_test, best_randomforest_model.predict_proba(X_test)[:, 1])
+naive_bayes_auc = roc_auc_score(Y_test, best_naive_bayes_model.predict_proba(X_test)[:, 1])
+
+# Plot confusion matrices
+def plot_confusion_matrix(conf_matrix, model_name):
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues")
+    plt.title(f"Confusion Matrix for {model_name}")
+    plt.xlabel("Predicted Labels")
+    plt.ylabel("True Labels")
+    plt.show()
+
+plot_confusion_matrix(logreg_conf_matrix, "Logistic Regression")
+plot_confusion_matrix(xgb_conf_matrix, "XGBoost")
+plot_confusion_matrix(randomforest_conf_matrix, "Random Forest")
+plot_confusion_matrix(naive_bayes_conf_matrix, "Naive Bayes")
+
+# Plot ROC curves
+plt.figure(figsize=(8, 6))
+plt.plot(fpr_logreg, tpr_logreg, label='Logistic Regression (AUC = {:.2f})'.format(logreg_auc))
+plt.plot(fpr_xgb, tpr_xgb, label='XGBoost (AUC = {:.2f})'.format(xgb_auc))
+plt.plot(fpr_rf, tpr_rf, label='Random Forest (AUC = {:.2f})'.format(randomforest_auc))
+plt.plot(fpr_nb, tpr_nb, label='Naive Bayes (AUC = {:.2f})'.format(naive_bayes_auc))
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic (ROC) Curves')
+plt.legend(loc='lower right')
+plt.show()
+
+# Create bar plot with accuracy measures
+models = ['Logistic Regression', 'XGBoost', 'Random Forest', 'Naive Bayes']
+accuracies = [logreg_accuracy, xgb_accuracy, randomforest_accuracy, naive_bayes_accuracy]
+sensitivities = [logreg_sensitivity, xgb_sensitivity, randomforest_sensitivity, naive_bayes_sensitivity]
+specificities = [logreg_specificity, xgb_specificity, randomforest_specificity, naive_bayes_specificity]
+AUC = [logreg_auc, xgb_auc, randomforest_auc, naive_bayes_auc]
+bar_width = 0.2
+index = range(len(models))
+
+plt.figure(figsize=(12, 6))
+plt.bar(index, accuracies, width=bar_width, label='Accuracy', color='darkgreen')
+plt.bar([i + bar_width for i in index], sensitivities, width=bar_width, label='Sensitivity', color='darkgray')
+plt.bar([i + 2 * bar_width for i in index], specificities, width=bar_width, label='Specificity', color='darkgoldenrod')
+plt.bar([i + 3 * bar_width for i in index], AUC, width=bar_width, label='AUC', color='darkblue')
+
+plt.xlabel('Models')
+plt.ylabel('Scores')
+plt.title('Model Performance')
+plt.xticks([i + bar_width for i in index], models)
+plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=4)  # Set the legend outside the figure below the axis labels
+plt.show()
+
+# Print accuracy measures as a dataframe
+accuracy_data = pd.DataFrame({
+    'Model': models,
+    'Accuracy': accuracies,
+    'Sensitivity': sensitivities,
+    'Specificity': specificities,
+    'AUC': AUC
+})
+
+print(accuracy_data)
+
+end_time = time.time()
+execution_time = end_time - start_time
+print(f"Execution time: {execution_time:.2f} seconds")
